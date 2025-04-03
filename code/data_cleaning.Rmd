@@ -1,0 +1,834 @@
+---
+title: "R Notebook"
+output:
+  html_notebook:
+    toc: True
+    toc_float: True
+---
+
+## 0. Load Dataset
+
+```{r}
+rm(list = ls())
+library(tidyverse)
+library(haven)
+issp_2011_raw = read_dta(file = 'ZA5800_v3-0-0.dta')
+issp_2021_raw = read_dta(file = 'ZA8000_v2-0-0.dta/ZA8000_v2-0-0.dta')
+```
+
+```{r}
+#preview
+head(issp_2011_raw)
+```
+
+```{r}
+head(issp_2021_raw)
+```
+
+## 1. Merge Datasets
+
+```{r}
+# all countries in 2011 dataset
+issp_2011_raw$C_ALPHAN %>% unique %>% print
+```
+
+```{r}
+# all countries in 2021 dataset
+issp_2021_raw$c_alphan %>% unique %>% print
+```
+
+```{r}
+# Select countries that have data available for both years
+issp_2011_raw[issp_2011_raw$C_ALPHAN %in% c("DE-W","DE-E"),"C_ALPHAN"] = "DE"
+country_list = intersect(issp_2011_raw$C_ALPHAN, issp_2021_raw$c_alphan)
+print(country_list)
+```
+
+```{r}
+# Rename Variables (2021)
+issp_2021 = issp_2021_raw[issp_2021_raw$c_alphan %in% country_list,] %>%
+  rename(
+    country_code = country,
+    country_prefix = c_alphan,
+    life_happiness = v1,
+    health_difficulty = v33,
+    bodily_aches = v34,
+    unhappy_depressed = v35,
+    lost_confidence = v36,
+    could_not_overcome = v37,
+    general_health = v51,
+    longstanding_illness = v52,
+    height = v53,
+    weight = v54,
+    smoking = v47,
+    drink_alcohol = v48,
+    do_sports = v49,
+    eat_fruits_veg = v50,
+    health_problems_behavior = v14,
+    health_problems_environment = v15,
+    health_problems_genes = v16,
+    health_problems_poverty = v17,
+    alternative_medicine_better = v18,
+    doctor_visits = v38,
+    alt_healthcare_visits = v39,
+    no_treatment_no_money = v40,
+    no_treatment_no_time = v41,
+    no_treatment_long_waiting = v42,
+    health_insurance_type = v60,
+    fair_healthcare_for_rich = v3,
+    willing_pay_taxes_for_healthcare = v7,
+    public_healthcare_non_citizens = v8,
+    public_healthcare_own_health_damage = v9,
+    access_healthcare_rich_vs_poor = v10,
+    access_healthcare_old_vs_young = v11,
+    access_healthcare_women_vs_men = v12,
+    access_healthcare_citizenship = v13,
+    confidence_in_healthcare = v2,
+    trust_doctors_trustworthy = v19,
+    trust_doctors_skills_bad = v20,
+    trust_doctors_care_more_earnings = v21,
+    overuse_healthcare = v4,
+    limited_government_healthcare = v5,
+    inefficient_healthcare_system = v6,
+    easy_to_get_best_treatment = v43,
+    satisfaction_with_healthcare = v44,
+    satisfaction_visit_doctor = v45,
+    satisfaction_visit_alt_practitioner = v46,
+    ISCO = ISCO08
+  ) %>%
+  mutate(year = 2021) # label the year
+```
+
+```{r}
+# Rename Variables (2011)
+issp_2011 = issp_2011_raw[issp_2011_raw$C_ALPHAN %in% country_list,] %>%
+  rename(
+    country_code = V4,
+    country_prefix = C_ALPHAN,
+    life_happiness = V5,
+    health_difficulty = V37,
+    bodily_aches = V38,
+    unhappy_depressed = V39,
+    lost_confidence = V40,
+    could_not_overcome = V41,
+    general_health = V59,
+    longstanding_illness = V60,
+    height = V61,
+    weight = V62,
+    smoking = V55,
+    drink_alcohol = V56,
+    do_sports = V57,
+    eat_fruits_veg = V58,
+    health_problems_behavior = V23,
+    health_problems_environment = V24,
+    health_problems_genes = V25,
+    health_problems_poverty = V26,
+    alternative_medicine_better = V30,
+    doctor_visits = V42,
+    alt_healthcare_visits = V43,
+    no_treatment_no_money = V45,
+    no_treatment_no_time = V46,
+    no_treatment_long_waiting = V48,
+    health_insurance_type = V63,
+    fair_healthcare_for_rich = V10,
+    willing_pay_taxes_for_healthcare = V15,
+    public_healthcare_non_citizens = V20,
+    public_healthcare_own_health_damage = V21,
+    confidence_in_healthcare = V7,
+    trust_doctors_trustworthy = V32,
+    trust_doctors_skills_bad = V34,
+    trust_doctors_care_more_earnings = V35,
+    overuse_healthcare = V12,
+    limited_government_healthcare = V13,
+    inefficient_healthcare_system = V14,
+    easy_to_get_best_treatment = V49,
+    satisfaction_with_healthcare = V51,
+    satisfaction_visit_doctor = V52,
+    satisfaction_visit_alt_practitioner = V53,
+    ISCO = ISCO88
+  ) %>%
+  mutate(year = 2011) #label the year
+```
+
+```{r}
+cn_happy = issp_2011[which(issp_2011$country_prefix == "CN"),]$CN_V5 %>% as.vector()
+cn_happy[which(cn_happy == 9)] = NA
+cn_happy = 6 - cn_happy
+
+issp_2011[which(issp_2011$country_prefix == "CN"),]$life_happiness = cn_happy
+```
+
+```{r, warning=FALSE}
+# find and select the common variables
+common_var = intersect(names(issp_2021), names(issp_2011))
+print(common_var)
+issp_temp = bind_rows(issp_2021[,common_var], issp_2011[,common_var])
+```
+
+```{r}
+# keep the variables of interest
+
+var_list = c("country_code", "country_prefix", "life_happiness", "health_difficulty", "bodily_aches", 
+"unhappy_depressed", "lost_confidence", "could_not_overcome", "general_health", "longstanding_illness", 
+"height", "weight", "smoking", "drink_alcohol", "do_sports", "eat_fruits_veg", 
+"health_problems_behavior", "health_problems_environment", "health_problems_genes", "health_problems_poverty", 
+"alternative_medicine_better", "doctor_visits", "alt_healthcare_visits", "no_treatment_no_money", 
+"no_treatment_no_time", "no_treatment_long_waiting", "health_insurance_type", 
+"willing_pay_taxes_for_healthcare", "public_healthcare_non_citizens", "public_healthcare_own_health_damage", 
+"confidence_in_healthcare", "trust_doctors_trustworthy", "trust_doctors_skills_bad", 
+"trust_doctors_care_more_earnings", "overuse_healthcare", "limited_government_healthcare", 
+"inefficient_healthcare_system", "easy_to_get_best_treatment", "satisfaction_with_healthcare", 
+"satisfaction_visit_doctor", "satisfaction_visit_alt_practitioner","SEX", "AGE", "URBRURAL", "BIRTH", "year")
+
+for (country in country_list) {
+  var_list = c(var_list, paste0(country, "_RINC"), paste0(country, "_INC"))
+}
+
+print(var_list)
+```
+
+```{r}
+# the final dataset that merges two years of data
+issp = issp_temp[,var_list]
+```
+
+```{r}
+head(issp)
+```
+
+### Merge Datas
+
+```{r}
+# load the gdp datasets
+gdp_pcap = read.csv("gdp_per_capita_selected.csv")
+gdp_pcap = gdp_pcap[,3:5]
+colnames(gdp_pcap) = c("country_prefix","gdp_pcap_2011","gdp_pcap_2021")
+head(gdp_pcap)
+```
+
+```{r}
+issp = issp %>%
+          left_join(gdp_pcap, by = "country_prefix") %>%
+          mutate(gdp_pcap = ifelse(year == 2011, gdp_pcap_2011, 
+                                   ifelse(year == 2021, gdp_pcap_2021, NA))) %>% 
+          select(-gdp_pcap_2011, -gdp_pcap_2021)
+```
+
+```{r}
+gdp_growth = read.csv("gdp_growth.csv")
+gdp_growth = gdp_growth[,3:5]
+colnames(gdp_growth) = c("country_prefix","gdp_growth_2011","gdp_growth_2021")
+head(gdp_growth)
+```
+
+```{r}
+issp = issp %>%
+          left_join(gdp_growth, by = "country_prefix") %>%
+          mutate(gdp_growth = ifelse(year == 2011, gdp_growth_2011, 
+                                   ifelse(year == 2021, gdp_growth_2021, NA))) %>% 
+          select(-gdp_growth_2011, -gdp_growth_2021)
+```
+
+## 2. Missing Data
+
+```{r}
+# select variables of interest
+x.y_var = c("AGE","easy_to_get_best_treatment")
+country_var = c("country_prefix","gdp_pcap","gdp_growth")
+
+covariates = c("life_happiness","unhappy_depressed","lost_confidence","could_not_overcome",
+               "bodily_aches","general_health","longstanding_illness", "health_difficulty",
+               "smoking","drink_alcohol","do_sports","eat_fruits_veg","SEX","BIRTH")
+
+family_incomes = c()
+personal_incomes = c()
+
+for (country in country_list) {
+ family_incomes = c(family_incomes, paste0(country, "_INC"))
+ personal_incomes = c(personal_incomes, paste0(country, "_RINC"))
+}
+
+df = issp[,c(x.y_var,country_var,covariates, family_incomes, personal_incomes)]
+```
+
+```{r}
+# missing in age <=> missing in birth year
+identical(df[df$BIRTH %in% c(-9,9999),],df[df$AGE %in% c(-9,999),])
+```
+
+```{r}
+covariates = covariates[covariates != "BIRTH"]
+```
+
+### Recode Misisng Data
+
+```{r}
+all_covr = c(covariates,"doctor_visits","limited_government_healthcare","inefficient_healthcare_system","satisfaction_with_healthcare","satisfaction_visit_doctor","smoking","trust_doctors_care_more_earnings","trust_doctors_skills_bad","trust_doctors_trustworthy", "confidence_in_healthcare","URBRURAL") %>% unique
+
+
+for (i in all_covr) {
+  # Define the condition to identify missing values (-9 or 99) for the variable
+  cond = issp[[i]] %in% c(-1, -9, -8, 99, 98, 97, 8, 9, 998, 999, -4)
+  issp[cond,i] = NA
+}
+
+```
+
+```{r}
+final_var = c(all_covr,family_incomes,personal_incomes,country_var,"year","AGE") %>% unique
+df = issp[,final_var]
+
+df[which(df$SEX %in% c(9,-9)),"SEX"] = NA
+df$SEX = df$SEX %>% as.numeric()
+
+df[which(df$AGE %in% c(-9,999)),"AGE"] = NA
+
+# AU
+df[which(df$AU_INC == 9999990),]$AU_INC = -2
+df[which(df$AU_INC %in% c(9999999,-9)),]$AU_INC = NA
+# CN
+df[which(df$CN_INC %in% c(9999999,9999998,9999997,-7,-8,-9)),]$CN_INC = NA
+df[which(df$CN_INC == 9999990),]$CN_INC = -2
+df[which(df$CN_INC %in% c(999996,9999996)),]$CN_INC = 1000000
+#TW
+df[which(df$TW_INC == 9999990),]$TW_INC = -2
+df[which(df$TW_INC %in% c(9999997,9999998,-8,-7)),]$TW_INC = NA
+df[which(df$TW_INC == 1250000),]$TW_INC = 1000000
+#HR
+df[which(df$HR_INC %in% c(999999,999998,999997,-7,-8,-9)),]$HR_INC = NA
+df[which(df$HR_INC == 999990),]$HR_INC = -2
+df[which(df$HR_INC %in% c(999996,9999996)),]$HR_INC = 1000000
+# CZ
+df[which(df$CZ_INC == 999990),]$CZ_INC = -2 # recode 'other country' into -2
+df[which(df$CZ_INC %in% c(999999, 999998, -9, -8, -7)),]$CZ_INC = NA
+# DK
+df[which(df$DK_INC == 9999990),]$DK_INC = -2
+df[which(df$DK_INC %in% c(9999999, -9)),]$DK_INC = NA
+# FI
+df[which(df$FI_INC == 999990),]$FI_INC = -2
+df[which(df$FI_INC %in% c(999999, -9)),]$FI_INC = NA
+# FR
+df[which(df$FR_INC == 999990),]$FR_INC = -2
+df[which(df$FR_INC %in% c(999999, -9)),]$FR_INC = NA
+# DE
+df[which(df$DE_INC == 999990),]$DE_INC = -2
+df[which(df$DE_INC %in% c(999999, 999998, 999997, -9, -7)),]$DE_INC = NA
+# IL
+df[which(df$IL_INC == 999990),]$IL_INC = -2
+df[which(df$IL_INC %in% c(999999, 9999, 98, 999997, -9, -8, -7,999998, 999997,999990 )),]$IL_INC = NA
+# IT
+df[which(df$IT_INC == 999990),]$IT_INC = -2
+df[which(df$IT_INC %in% c(999999, 999998, 999997, -9, -8, -7, -4)),]$IT_INC = NA
+# JP
+df[which(df$JP_INC == 99999990),]$JP_INC = -2
+df[which(df$JP_INC %in% c(99999999, -9, -8, -7)),]$JP_INC = NA
+# NL
+df[which(df$NL_INC == 999990),]$NL_INC = -2
+df[which(df$NL_INC %in% c(999999, -9)),]$NL_INC = NA
+# NO
+df[which(df$NO_INC == 9999990),]$NO_INC = -2
+df[which(df$NO_INC %in% c(9999999, -9, -8)),]$NO_INC = NA
+# PH
+df[which(df$PH_INC == 999990),]$PH_INC = -2
+df[which(df$PH_INC %in% c(999999, 999998, 999997, -9, -8, -7)),]$PH_INC = NA
+# PL
+df[which(df$PL_INC == 999990),]$PL_INC = -2
+df[which(df$PL_INC %in% c(999999, 999998, -8, -7)),]$PL_INC = NA
+# RU
+df[which(df$RU_INC == 999990),]$RU_INC = -2
+df[which(df$RU_INC %in% c(999998, 999997, -9, -8, -7)),]$RU_INC = NA
+# SK
+df[which(df$SK_INC == 999990),]$SK_INC = -2
+df[which(df$SK_INC %in% c(999999, 999998, -8, -7)),]$SK_INC = NA
+# SI
+df[which(df$SI_INC == 999990),]$SI_INC = -2
+df[which(df$SI_INC %in% c(999999, 999998, 999997, -9, -8, -7)),]$SI_INC = NA
+# ZA
+df[which(df$ZA_INC == 999990),]$ZA_INC = -2
+df[which(df$ZA_INC %in% c(999999, 999998, 999997, -9, -8, -7)),]$ZA_INC = NA
+# CH
+df[which(df$CH_INC == 999990),]$CH_INC = -2
+df[which(df$CH_INC %in% c(999999, 999998, 999997, -9, -8, -7)),]$CH_INC = NA
+# US
+df[which(df$US_INC == 999990),]$US_INC = -2
+df[which(df$US_INC %in% c(999998, 999997, -9)),]$US_INC = NA
+```
+
+```{r}
+# AU
+df[which(df$AU_RINC == 9999990),]$AU_RINC = -2
+df[which(df$AU_RINC %in% c(9999999,-9)),]$AU_RINC = NA
+# CN
+df[which(df$CN_RINC %in% c(9999999,9999998,9999997,-7,-8,-9)),]$CN_RINC = NA
+df[which(df$CN_RINC == 9999990),]$CN_RINC = -2
+df[which(df$CN_RINC %in% c(999996,9999996)),]$CN_RINC = 1000000
+#TW
+df[which(df$TW_RINC == 9999990),]$TW_RINC = -2
+df[which(df$TW_RINC %in% c(9999997,9999998,-8,-7)),]$TW_RINC = NA
+df[which(df$TW_RINC == 1250000),]$TW_RINC = 1000000
+#HR
+df[which(df$HR_RINC %in% c(999999,999998,999997,-7,-8,-9)),]$HR_RINC = NA
+df[which(df$HR_RINC == 999990),]$HR_RINC = -2
+df[which(df$HR_RINC %in% c(999996,9999996)),]$HR_RINC = 1000000
+# CZ
+df[which(df$CZ_RINC == 999990),]$CZ_RINC = -2 # recode 'other country' into -2
+df[which(df$CZ_RINC %in% c(999999, 999998, -9, -8, -7)),]$CZ_RINC = NA
+# DK
+df[which(df$DK_RINC == 9999990),]$DK_RINC = -2
+df[which(df$DK_RINC %in% c(9999999, -9)),]$DK_RINC = NA
+# FI
+df[which(df$FI_RINC == 999990),]$FI_RINC = -2
+df[which(df$FI_RINC %in% c(999999, -9)),]$FI_RINC = NA
+# FR
+df[which(df$FR_RINC == 999990),]$FR_RINC = -2
+df[which(df$FR_RINC %in% c(999999, -9)),]$FR_RINC = NA
+# DE
+df[which(df$DE_RINC == 999990),]$DE_RINC = -2
+df[which(df$DE_RINC %in% c(999999, 999998, 999997, -9, -7)),]$DE_RINC = NA
+# IL
+df[which(df$IL_RINC == 999990),]$IL_RINC = -2
+df[which(df$IL_RINC %in% c(999999, 9999, 98, 999997, -9, -8, -7,999998, 999997,999990 )),]$IL_RINC = NA
+# IT
+df[which(df$IT_RINC == 999990),]$IT_RINC = -2
+df[which(df$IT_RINC %in% c(999999, 999998, 999997, -9, -8, -7, -4)),]$IT_RINC = NA
+# JP
+df[which(df$JP_RINC == 99999990),]$JP_RINC = -2
+df[which(df$JP_RINC %in% c(99999999, -9, -8, -7)),]$JP_RINC = NA
+# NL
+df[which(df$NL_RINC == 999990),]$NL_RINC = -2
+df[which(df$NL_RINC %in% c(999999, -9)),]$NL_RINC = NA
+# NO
+df[which(df$NO_RINC == 9999990),]$NO_RINC = -2
+df[which(df$NO_RINC %in% c(9999999, -9, -8)),]$NO_RINC = NA
+# PH
+df[which(df$PH_RINC == 999990),]$PH_RINC = -2
+df[which(df$PH_RINC %in% c(999999, 999998, 999997, -9, -8, -7)),]$PH_RINC = NA
+# PL
+df[which(df$PL_RINC == 999990),]$PL_RINC = -2
+df[which(df$PL_RINC %in% c(999999, 999998, -8, -7)),]$PL_RINC = NA
+# RU
+df[which(df$RU_RINC == 999990),]$RU_RINC = -2
+df[which(df$RU_RINC %in% c(999998, 999997, -9, -8, -7)),]$RU_RINC = NA
+# SK
+df[which(df$SK_RINC == 999990),]$SK_RINC = -2
+df[which(df$SK_RINC %in% c(999999, 999998, -8, -7)),]$SK_RINC = NA
+# SI
+df[which(df$SI_RINC == 999990),]$SI_RINC = -2
+df[which(df$SI_RINC %in% c(999999, 999998, 999997, -9, -8, -7)),]$SI_RINC = NA
+# ZA
+df[which(df$ZA_RINC == 999990),]$ZA_RINC = -2
+df[which(df$ZA_RINC %in% c(999999, 999998, 999997, -9, -8, -7)),]$ZA_RINC = NA
+# CH
+df[which(df$CH_RINC == 999990),]$CH_RINC = -2
+df[which(df$CH_RINC %in% c(999999, 999998, 999997, -9, -8, -7)),]$CH_RINC = NA
+# US
+df[which(df$US_RINC == 999990),]$US_RINC = -2
+df[which(df$US_RINC %in% c(999998, 999997, -9)),]$US_RINC = NA
+```
+
+```{r}
+library(haven)
+
+# Remove labels by converting to numeric values, ignoring any label conflicts
+df[family_incomes] <- lapply(df[family_incomes], as.numeric)
+
+# Now apply pmax without issues
+df$fam_inc <- do.call(pmax, c(df[family_incomes], na.rm = FALSE))
+
+# Make column names unique in df
+colnames(df) <- make.names(colnames(df), unique = TRUE)
+
+# Now you can safely remove the columns listed in `family_incomes`
+df <- df %>% select(-all_of(family_incomes))
+```
+
+```{r}
+# Remove labels by converting to numeric values, ignoring any label conflicts
+df[personal_incomes] <- lapply(df[personal_incomes], as.numeric)
+
+# Now apply pmax without issues
+df$personal_inc <- do.call(pmax, c(df[personal_incomes], na.rm = FALSE))
+
+# Make column names unique in df
+colnames(df) <- make.names(colnames(df), unique = TRUE)
+
+# Now you can safely remove the columns listed in `personal_incomes`
+df <- df %>% select(-all_of(personal_incomes))
+```
+
+```{r}
+summary_table <- df %>%
+  group_by(country_prefix, year) %>%
+  summarise(across(where(is.numeric), 
+                   list(max = ~max(.x, na.rm = TRUE), 
+                        min = ~min(.x, na.rm = TRUE), 
+                        mean = ~mean(.x, na.rm = TRUE),
+                        na_count = ~sum(is.na(.x))),
+                   .names = "{.col}_{.fn}")) %>%
+  ungroup()
+```
+
+```{r}
+df = df %>% filter(!country_prefix %in% c("TW", "FR"))
+```
+
+```{r}
+summary_table <- df %>%
+  group_by(country_prefix, year) %>%
+  summarise(across(where(is.numeric), 
+                   list(max = ~max(.x, na.rm = TRUE), 
+                        min = ~min(.x, na.rm = TRUE), 
+                        mean = ~mean(.x, na.rm = TRUE),
+                        na_count = ~sum(is.na(.x))),
+                   .names = "{.col}_{.fn}")) %>%
+  ungroup()
+```
+
+### Remove NA
+
+```{r}
+df$missing_fam_inc = ifelse(is.na(df$fam_inc), 1, 0)
+df$fam_inc[is.na(df$fam_inc)] = 0
+```
+
+```{r}
+df$missing_personal_inc = ifelse(is.na(df$personal_inc), 1, 0)
+df$personal_inc[is.na(df$personal_inc)] = 0 
+```
+
+## 3. Index
+
+### Standardized Family Income
+
+```{r}
+# calculate the standardized family income by group and by year
+df = df %>%
+  group_by(country_prefix, year) %>%
+  do({
+    subset_df <- .
+    
+    avrg_fam_inc = mean(subset_df$fam_inc)
+    sd_fam_inc = sd(subset_df$fam_inc)
+    subset_df$z_fam_inc = ((subset_df$fam_inc) - avrg_fam_inc)/sd_fam_inc
+    
+    subset_df
+  }) %>%
+  ungroup()
+```
+
+```{r, eval=FALSE}
+# Check whether the calculation above is true by calculating the standardized income of AU in 2011 manually
+
+sub_df = df[which(df$year == 2011 & df$country_prefix == "AU"),]
+
+avrg_fam_inc = mean(sub_df$fam_inc)
+sd_fam_inc = sd(sub_df$fam_inc)
+sub_df$test = ((sub_df$fam_inc) - avrg_fam_inc)/sd_fam_inc
+
+rm(avrg_fam_inc, sd_fam_inc)
+```
+
+```{r, eval=FALSE}
+rm(sub_df)
+```
+
+### Standardized Personal Income
+
+```{r}
+df = df %>%
+  group_by(country_prefix, year) %>%
+  do({
+    subset_df <- .
+    avrg_personal_inc = mean(subset_df$personal_inc)
+    sd_personal_inc = sd(subset_df$personal_inc)
+    subset_df$z_personal_inc = ((subset_df$personal_inc) - avrg_personal_inc)/sd_personal_inc
+    subset_df
+  }) %>%
+  ungroup()
+```
+
+### Physical Health
+
+```{r}
+# Recode general_health: 1 (excellent) to 5 (poor)
+df$general_health <- 6 - df$general_health  # Reverse so that higher values indicate better health
+
+# Recode longstanding_illness: 1 (yes), 2 (no)
+df$longstanding_illness <- ifelse(df$longstanding_illness == 1, 1, 0)  # Recode so that 1 = has illness, 0 = no illness
+
+# Recode smoking: 1 (do not smoke) to 7 (smoke 40+ cigarettes per day)
+df$smoking <- 8 - df$smoking  # Reverse so that higher values indicate fewer cigarettes
+
+# Recode drink_alcohol: 1 (never) to 5 (daily)
+df$drink_alcohol <- 6 - df$drink_alcohol  # Reverse so that higher values indicate less frequent drinking
+
+# Recode do_sports: 1 (never) to 5 (daily)
+df$do_sports <- 6 - df$do_sports  # Reverse so that higher values indicate more frequent exercise
+
+# Recode eat_fruits_veg: 1 (never) to 5 (daily)
+df$eat_fruits_veg <- 6 - df$eat_fruits_veg  # Reverse so that higher values indicate more frequent consumption
+
+```
+
+```{r}
+# Ensure the necessary columns are numeric
+numeric_columns <- c("general_health", "health_difficulty", "bodily_aches", 
+                     "smoking", "drink_alcohol", "do_sports", "eat_fruits_veg")
+df[numeric_columns] <- lapply(df[numeric_columns], as.numeric)
+
+# Define weights
+weight7 <- 1/7
+weight5 <- 1/5
+
+# Calculate the physical health index considering missing values
+df$physical_health <- apply(df, 1, function(row) {
+  # Extract the variables needed for calculation
+  values <- as.numeric(c(row["general_health"], row["health_difficulty"], 
+                         row["bodily_aches"], row["smoking"], 
+                         row["drink_alcohol"], row["do_sports"], 
+                         row["eat_fruits_veg"]))
+  
+  # Define weights corresponding to the variables
+  weights <- c(weight5, weight5, weight5, weight7, weight5, weight5, weight5)
+  
+  # Count missing values
+  missing_count <- sum(is.na(values))
+  
+  # Check if missing values exceed threshold
+  if (missing_count > 4) {
+    return(NA) # Set physical_health to NA
+  } else {
+    # Remove missing values from the calculation
+    valid_values <- values[!is.na(values)]
+    valid_weights <- weights[!is.na(values)]
+    
+    # Calculate the weighted average
+    weighted_sum <- sum(valid_weights * valid_values)
+    weight_sum <- sum(valid_weights)
+    
+    return(weighted_sum / weight_sum) # Calculate index with non-missing values
+  }
+})
+
+```
+
+### Mental Health
+
+```{r}
+# Recode life_happiness: 1 (completely happy) to 7 (completely unhappy)
+df[which(df$country_prefix != "CN" | df$year != 2011),]$life_happiness = 8 - df[which(df$country_prefix != "CN" | df$year != 2011),]$life_happiness
+
+df[which(df$country_prefix == "CN" & df$year == 2011),]$life_happiness = 6 - df[which(df$country_prefix == "CN" & df$year == 2011),]$life_happiness  # Reverse the scale so that 1 = unhappy, 7 = happy
+
+# Recode health difficulty: 1 (never) to 5 (very often)
+df$health_difficulty <- 6 - df$health_difficulty  # Reverse so that higher values indicate less difficulty
+
+# Recode bodily aches: 1 (never) to 5 (very often)
+df$bodily_aches <- 6 - df$bodily_aches  # Reverse so that higher values indicate fewer aches
+
+# Recode unhappy_depressed: 1 (never) to 5 (very often)
+df$unhappy_depressed <- 6 - df$unhappy_depressed  # Reverse so that higher values indicate less depression
+
+# Recode lost_confidence: 1 (never) to 5 (very often)
+df$lost_confidence <- 6 - df$lost_confidence  # Reverse so that higher values indicate more confidence
+
+# Recode could_not_overcome: 1 (never) to 5 (very often)
+df$could_not_overcome <- 6 - df$could_not_overcome  # Reverse so that higher values indicate better coping ability
+```
+
+```{r}
+# Define weights
+weight7 <- 1/7
+weight5 <- 1/5
+
+# Separate conditions
+cond_cn_2011 <- which(df$country_prefix == "CN" & df$year == 2011)
+cond_not_cn_2011 <- which(df$country_prefix != "CN" | df$year != 2011)
+
+# Helper function to calculate mental health index considering missing values
+calculate_mental_health <- function(values, weights, max_missing) {
+  # Count missing values
+  missing_count <- sum(is.na(values))
+  
+  # Check if missing values exceed the threshold
+  if (missing_count > max_missing) {
+    return(NA) # Set mental_health to NA
+  } else {
+    # Remove missing values from the calculation
+    valid_values <- values[!is.na(values)]
+    valid_weights <- weights[!is.na(values)]
+    
+    # Calculate the weighted average
+    weighted_sum <- sum(valid_weights * valid_values)
+    weight_sum <- sum(valid_weights)
+    
+    return(weighted_sum / weight_sum) # Calculate index with non-missing values
+  }
+}
+
+# Calculate for China in 2011
+df[cond_cn_2011, "mental_health"] <- apply(df[cond_cn_2011, c("life_happiness", "unhappy_depressed", "lost_confidence", "could_not_overcome")], 1, function(row) {
+  values <- as.numeric(row)
+  weights <- c(weight5, weight5, weight5, weight5)
+  calculate_mental_health(values, weights, max_missing = 2)
+})
+
+# Calculate for all other cases
+df[cond_not_cn_2011, "mental_health"] <- apply(df[cond_not_cn_2011, c("life_happiness", "unhappy_depressed", "lost_confidence", "could_not_overcome")], 1, function(row) {
+  values <- as.numeric(row)
+  weights <- c(weight7, weight5, weight5, weight5)
+  calculate_mental_health(values, weights, max_missing = 2)
+})
+
+```
+
+```{r}
+summary_table <- df %>%
+  group_by(country_prefix, year) %>%
+  summarise(across(where(is.numeric), 
+                   list(max = ~max(.x, na.rm = TRUE), 
+                        min = ~min(.x, na.rm = TRUE), 
+                        mean = ~mean(.x, na.rm = TRUE),
+                        na_count = ~sum(is.na(.x))),
+                   .names = "{.col}_{.fn}")) %>%
+  ungroup()
+```
+
+### Overall Satisfaction
+
+```{r}
+# 確保資料框中的變項為數值型
+df[c("inefficient_healthcare_system", 
+     "confidence_in_healthcare",
+     "satisfaction_with_healthcare")] = lapply(df[c("inefficient_healthcare_system",
+                                                     "confidence_in_healthcare", 
+                                                     "satisfaction_with_healthcare")], 
+                                                as.numeric)
+
+df$confidence_in_healthcare = 6 - df$confidence_in_healthcare
+df$satisfaction_with_healthcare = 8 - df$satisfaction_with_healthcare
+
+# Assign weights based on the scale of each variable
+weights <- c(1/5, 1/5, 1/7)
+
+
+# Function to calculate confidence
+df$confidence <- apply(df[, c("inefficient_healthcare_system", "confidence_in_healthcare", "satisfaction_with_healthcare")], 1, function(row) {
+  # Check for non-missing values
+  non_missing <- !is.na(row)
+  num_non_missing <- sum(non_missing)
+  
+  if (num_non_missing < 2) {
+    # Set to NA if less than two non-missing values
+    return(NA)
+  } else {
+    # Subset the weights and row values for non-missing entries
+    valid_weights <- weights[non_missing]
+    valid_values <- row[non_missing]
+    
+    # Calculate the weighted mean
+    weighted_mean <- sum(valid_values * valid_weights, na.rm = TRUE) * (5/3)
+    
+    return(weighted_mean)
+  }
+})
+
+```
+
+## 4. Final Cleaning & Output
+
+```{r}
+df$isMale <- ifelse(df$SEX == 1, 1, 0)
+```
+
+### Map the welfare typologies into each countries
+
+```{r}
+welfare_mapping = list(
+  "AU" = "Liberal", "CH" = "Conservative", "CN" = "Conservative", 
+  "CZ" = "Conservative", "DE" = "Conservative", "DK" = "Social Democratic",
+  "FI" = "Social Democratic", "FR" = "Conservative", "HR" = "Conservative", 
+  "IL" = "Conservative", "IT" = "Conservative", "JP" = "Conservative", 
+  "NL" = "Social Democratic", "NO" = "Social Democratic", 
+  "PH" = "Liberal", "PL" = "Conservative", "RU" = "Conservative", 
+  "SI" = "Social Democratic", "SK" = "Conservative", "TW" = "Social Democratic",
+  "US" = "Liberal", "ZA" = "Liberal"
+)
+df$welfare <- sapply(df$country_prefix, function(x) welfare_mapping[[x]])
+```
+
+### Categorize Age
+
+```{r}
+df$age_cat = cut(df$AGE,
+                       breaks = c(-Inf, 24, 44, 59, 70, Inf),
+                       labels = c("Adolescent (15–24)", 
+                                  "Young Adults (25–44)",
+                                  "Middle-Aged Adults (45–59)", 
+                                  "Older Adults (60–74)", 
+                                  "Elderly (70+)"),
+                       right = TRUE)
+```
+
+### Select Variables
+
+```{r}
+var_model = c("country_prefix","year","welfare","gdp_pcap","gdp_growth",
+              "isMale","age_cat",
+              "fam_inc","z_fam_inc","z_personal_inc","mental_health","physical_health"
+              ,"longstanding_illness",
+              "SEX","AGE", "inefficient_healthcare_system", 
+              "confidence_in_healthcare", "satisfaction_with_healthcare",
+              "missing_fam_inc","missing_personal_inc",
+              "confidence")
+```
+
+```{r}
+df_issp = df[,var_model]
+```
+
+```{r}
+df_issp = df_issp %>% select(-c("SEX"))
+summary_table_final <- df_issp %>%
+  group_by(country_prefix, year) %>%
+  summarise(across(where(is.numeric), 
+                   list(max = ~max(.x, na.rm = TRUE), 
+                        min = ~min(.x, na.rm = TRUE), 
+                        mean = ~mean(.x, na.rm = TRUE),
+                        na_count = ~sum(is.na(.x))),
+                   .names = "{.col}_{.fn}")) %>%
+  ungroup()
+```
+
+```{r}
+ggplot(data = df_issp) +
+  geom_histogram(mapping = aes(x = AGE, fill = welfare)) + 
+  scale_x_continuous(breaks = seq(25, 110, by = 20)) +
+  labs(
+  title = "Distribution of Age",
+  x = "Age",
+  y = "Count") +
+  scale_fill_discrete(name = "Welfare Regime")
+```
+
+```{r}
+ggplot(data = df_issp) +
+  geom_bar(mapping = aes(x = age_cat, fill = welfare)) +
+    labs(
+      title = "Distribution of Age",
+      x = "",
+      y = "Frequency")+scale_fill_discrete(name = "Welfare Regime")+
+   theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
+```{r}
+# Define the variables to exempt from filtering
+exempt_vars <- c("inefficient_healthcare_system", "confidence_in_healthcare", "satisfaction_with_healthcare")
+
+# Filter rows: remove rows with NA in all columns except the exempted ones
+df_issp <- df[rowSums(is.na(df_issp[ , !(names(df_issp) %in% exempt_vars)])) == 0, ]
+```
+
+```{r}
+save(df_issp,file = "df_issp.RData")
+```

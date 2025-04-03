@@ -1,0 +1,616 @@
+---
+title: "Models"
+output: 
+  html_notebook:
+    toc: true
+    toc_float: true
+---
+
+## 0. Load Data
+
+```{r}
+rm(list = ls())
+load(file = 'df_issp.RData')
+library(tidyverse)
+library(lme4)
+library(lmerTest)
+library(haven)
+df_issp$gdp_pcap = log(df_issp$gdp_pcap)
+
+df_issp$AGE = df_issp$AGE %>% zap_label()
+df_issp$elder = 0
+df_issp[df_issp$AGE >= 70,]$elder = 1
+```
+
+```{r}
+summary_table <- df_issp %>%
+  group_by(country_prefix, year) %>%
+  summarise(across(where(is.numeric), 
+                   list(max = ~max(.x, na.rm = TRUE), 
+                        min = ~min(.x, na.rm = TRUE), 
+                        mean = ~mean(.x, na.rm = TRUE),
+                        na_count = ~sum(is.na(.x))),
+                   .names = "{.col}_{.fn}")) %>%
+  ungroup()
+```
+
+### Cronbach's alpha
+
+```{r}
+library(psych)
+psych::alpha(x = df_issp[, c("confidence_in_healthcare", "inefficient_healthcare_system", "satisfaction_with_healthcare")]) %>% print
+```
+
+## 1. Null Model: One-way random-effects ANOVA
+
+$$
+\text{Level 1 model:}\\
+\qquad Y_{ij}=\beta_{0j}+r_{ij}\\
+\text{Level 2 model:}\\
+\qquad \beta_{0j}=\gamma_{00}+u_{0j}
+$$
+
+```{r}
+library(lme4)
+library(lmerTest)
+null_model = lmer(confidence ~ 1 + (1 | country_prefix), data = df_issp)
+summary(null_model)
+```
+
+```{r}
+summary(
+  null_model,
+  statistic = "({std.error})",  stars = T
+)
+```
+
+## 2. Models
+
+### Model 2
+
+```{r}
+model_2 = lmer(confidence ~ 
+                     (1 | country_prefix) +
+                     factor(elder) + 
+                     factor(longstanding_illness) + 
+                     factor(year) + 
+                     factor(missing_fam_inc) + factor(missing_personal_inc) + 
+                     z_fam_inc + z_personal_inc +
+                     mental_health + physical_health +
+                     factor(elder):factor(year),
+                 data = df_issp)
+
+summary(model_2)
+```
+
+```{r}
+summary(
+  model_2,
+  statistic = "({std.error})",  stars = T
+)
+```
+
+### Model 3
+
+```{r}
+model_3 = lmer(confidence ~ 
+                     (1 | country_prefix) +
+                     factor(elder) + 
+                     factor(longstanding_illness) + 
+                     factor(year) + 
+                     factor(missing_fam_inc) + factor(missing_personal_inc) + 
+                     z_fam_inc + z_personal_inc +
+                     mental_health + physical_health + gdp_pcap +
+                     gdp_growth + factor(welfare) + 
+                     factor(elder):factor(welfare) +
+                     factor(welfare):factor(year) +
+                     factor(elder):factor(year),
+                 data = df_issp)
+
+summary(model_3)
+```
+
+```{r}
+summary(
+  model_3,
+  statistic = "({std.error})",  stars = T
+)
+```
+
+### Model 4
+
+```{r}
+model_4 = lmer(confidence ~ 
+                     (1 | country_prefix) +
+                     factor(elder) + 
+                     factor(longstanding_illness) + 
+                     factor(year) + 
+                     factor(missing_fam_inc) + factor(missing_personal_inc) + 
+                     z_fam_inc + z_personal_inc +
+                     mental_health + physical_health + gdp_pcap +
+                     gdp_growth + factor(welfare) + 
+                     factor(elder):factor(welfare) +
+                     factor(welfare):factor(year) +
+                     factor(elder):gdp_growth +
+                     factor(elder):gdp_pcap + factor(elder):factor(year),
+                 data = df_issp)
+
+summary(model_4)
+```
+
+```{r}
+summary(
+  model_4,
+  statistic = "({std.error})",  stars = T
+)
+```
+
+### Full Model
+
+```{r}
+model_final_rs = lmer(confidence ~ 
+                     (1 + factor(elder) | country_prefix) +
+                     factor(elder) + 
+                     factor(longstanding_illness) + 
+                     factor(year) + 
+                     factor(missing_fam_inc) + factor(missing_personal_inc) + 
+                     z_fam_inc + z_personal_inc +
+                     mental_health + physical_health + gdp_pcap +
+                     gdp_growth + factor(welfare) + 
+                     factor(elder):factor(welfare) +
+                     factor(welfare):factor(year) +
+                     factor(elder):gdp_growth +
+                     factor(elder):gdp_pcap + factor(elder):factor(year),
+                 data = df_issp)
+
+summary(model_final_rs)
+```
+
+```{r}
+summary(
+  model_final_rs,
+  statistic = "({std.error})",  stars = T
+)
+```
+
+## 3. Visualization
+
+```{r}
+
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(rnaturalearthhires)
+library(ggplot2)
+library(dplyr)
+library(cowplot)
+
+welfare_data <- data.frame(
+  country_name = c(
+    "Australia", "Switzerland", "China", "Czech", "Germany", "Denmark",
+    "Finland", "France", "Croatia", "Israel", "Italy", "Japan",
+    "Netherlands", "Norway", "Philippines", "Poland", "Russia",
+    "Slovenia", "Slovak Republic", "United States of America", "South Africa"
+  ),
+  welfare_type = c(
+    "Liberal", "Conservative", "Conservative", "Conservative", "Conservative",
+    "Social Democratic", "Social Democratic", "Conservative", "Conservative",
+    "Conservative", "Conservative", "Conservative", "Social Democratic",
+    "Social Democratic", "Liberal", "Conservative", "Conservative",
+    "Social Democratic", "Conservative", "Liberal", "Liberal"
+  )
+)
+
+
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+map_data <- world %>%
+  left_join(welfare_data, by = c("name" = "country_name"))
+
+# 主地圖
+world_map <- ggplot(data = map_data) +
+  geom_sf(aes(fill = welfare_type), color = "black", size = 0.1) +
+  theme_minimal() +
+  labs(
+    title = "Study Area"
+  ) +
+  theme(
+    legend.position = "right",  # 將圖例放置在右側
+    legend.title = element_text(size = 10),
+    legend.text = element_text(size = 8)
+  ) + scale_fill_discrete(name = "Welfare Regime")
+
+# 歐洲插圖
+europe_inset <- ggplot(data = map_data) +
+  geom_sf(aes(fill = welfare_type), color = "black", size = 0.1) +
+  coord_sf(xlim = c(-10, 40), ylim = c(35, 70), expand = FALSE) +
+  theme_void() +  # 移除背景與軸
+  theme(
+    panel.background = element_rect(fill = "white", color = "black"),  # 白底與外框
+    plot.margin = margin(5, 5, 5, 5)
+  ) +
+  labs(title = "") +
+  guides(fill = "none")  # 移除插圖中的圖例
+
+# 東南亞插圖
+southeast_asia_inset <- ggplot(data = map_data) +
+  geom_sf(aes(fill = welfare_type), color = "black", size = 0.1) +
+  coord_sf(xlim = c(115, 135), ylim = c(5, 23), expand = FALSE) +
+  theme_void() +  # 移除背景與軸
+  theme(
+    panel.background = element_rect(fill = "white", color = "black"),  # 白底與外框
+    plot.margin = margin(5, 5, 5, 5)
+  ) +
+  labs(title = "") +
+  guides(fill = "none")  # 移除插圖中的圖例
+
+# 主地圖與小地圖組合
+final_map <- ggdraw() +
+  draw_plot(world_map) +
+  draw_plot(europe_inset, x = 0.25, y = 0.55, width = 0.35, height = 0.35)
+
+# 顯示地圖
+print(final_map)
+```
+
+```{r}
+library(ggplot2)
+library(ggridges)
+
+# 計算整體平均值
+overall_mean <- mean(df_issp$confidence, na.rm = TRUE)
+
+# 繪製 ridgeline plot 並添加圖例
+ggplot(df_issp, aes(x = confidence, y = country_prefix, fill = welfare)) +
+  geom_density_ridges(scale = 5, rel_min_height = 0.01, alpha = 0.8) +  # 縮小每個 ridgeline 的高度
+  geom_vline(xintercept = overall_mean, color = "black", linetype = "dashed", size = 0.8) +
+  scale_fill_discrete(name = "Welfare Regime") +  # 設置圖例標題
+  labs(
+    title = "Distribution of Perception Towards Healthcare System by Country",
+    x = "Perception Towards Healthcare System (1-5 scale)",
+    y = "Country"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "right",  # 將圖例放置於右側
+    legend.title = element_text(size = 10),  # 調整圖例標題大小
+    legend.text = element_text(size = 8)     # 調整圖例文字大小
+  )
+
+```
+
+```{r}
+library(generics)
+library(broom.mixed)
+coef_df = tidy(model_final_rs, effects = "fixed", conf.int = TRUE)
+rename_lookup <- data.frame(
+  original = c(
+    "(Intercept)", 
+    "factor(elder)1", 
+    "factor(longstanding_illness)1", 
+    "factor(year)2021", 
+    "factor(missing_fam_inc)1", 
+    "factor(missing_personal_inc)1", 
+    "z_fam_inc", 
+    "z_personal_inc", 
+    "mental_health", 
+    "physical_health", 
+    "gdp_pcap", 
+    "gdp_growth", 
+    "factor(welfare)Liberal", 
+    "factor(welfare)Social Democratic", 
+    "factor(elder)1:factor(welfare)Liberal", 
+    "factor(elder)1:factor(welfare)Social Democratic", 
+    "factor(year)2021:factor(welfare)Liberal", 
+    "factor(year)2021:factor(welfare)Social Democratic", 
+    "factor(elder)1:factor(year)2021", 
+    "factor(elder)1:gdp_growth", 
+    "factor(elder)1:gdp_pcap"
+  ),
+  renamed = c(
+    "Intercept", 
+    "Elder (ref. Age < 70)", 
+    "Have Longstanding Illness", 
+    "Year: 2021 (ref. 2011)", 
+    "Missing in Family Income", 
+    "Missing in Household Income", 
+    "Family Income (Z-score)", 
+    "Personal Income (Z-score)", 
+    "Mental Health", 
+    "Physical Health", 
+    "ln(GDP per capita)", 
+    "GDP growth (%)", 
+    "Liberal Welfare (ref. Conservative)", 
+    "Social Democratic Welfare (ref. Conservative)", 
+    "Elder × Liberal Welfare", 
+    "Elder × Social Democratic Welfare", 
+    "2021 × Liberal Welfare", 
+    "2021 × Social Democratic Welfare", 
+    "Elder × 2021", 
+    "Elder × GDP Growth", 
+    "Elder × ln(GDP per capita)"
+  )
+)
+
+# Rename variables in coef_df
+coef_df <- coef_df %>%
+  left_join(rename_lookup, by = c("term" = "original")) %>%
+  mutate(term = coalesce(renamed, term)) %>%
+  dplyr::select(-renamed)
+```
+
+```{r}
+# Plot coefficients with confidence intervals
+ggplot(coef_df[c(19,2,4,11,12,13,14,15,16,17,18,20,21),], aes(x = term, y = estimate)) +
+  geom_point(size = 4, color = "blue") +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black", size = 0.8) +
+  labs(
+    title = "HLM Coefficient Plot",
+    x = "Predictors",
+    y = "Estimates"
+  ) +
+  theme_minimal() +
+  coord_flip()  # Flip coordinates for better readability
+
+```
+
+```{r}
+# Extract random effects from the model
+random_effects <- ranef(model_final_rs)$country_prefix
+
+elderly_random_slope <- random_effects[,2]
+
+# Create a data frame with countries and their slopes
+plot_data <- data.frame(
+  country = rownames(random_effects),
+  random_slope = elderly_random_slope
+)
+
+welfare_mapping = list(
+  "AU" = "Liberal", "CH" = "Conservative", "CN" = "Conservative", 
+  "CZ" = "Conservative", "DE" = "Conservative", "DK" = "Social Democratic",
+  "FI" = "Social Democratic", "FR" = "Conservative", "HR" = "Conservative", 
+  "IL" = "Conservative", "IT" = "Conservative", "JP" = "Conservative", 
+  "NL" = "Social Democratic", "NO" = "Social Democratic", 
+  "PH" = "Liberal", "PL" = "Conservative", "RU" = "Conservative", 
+  "SI" = "Social Democratic", "SK" = "Conservative", "TW" = "Social Democratic",
+  "US" = "Liberal", "ZA" = "Liberal"
+)
+plot_data$welfare <- sapply(plot_data$country, function(x) welfare_mapping[[x]])
+
+# Sort by random slope for easier visualization
+plot_data <- plot_data[order(plot_data$random_slope), ]
+
+ggplot(plot_data, aes(x = reorder(country, random_slope), y = random_slope, fill = welfare)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(
+    title = "Random Slopes for Elderly by Country & Welfare Regime",
+    x = "Country",
+    y = "Random Slope",
+    fill = "Welfare Regime"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+
+# Summarize mean and sd for each group
+summarized_data <- df_issp %>%
+  group_by(country_prefix, year, elder) %>%
+  summarise(
+    mean_conf = mean(confidence, na.rm = TRUE),
+    sd_conf = sd(confidence, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  pivot_wider(
+    names_from = elder,
+    values_from = c(mean_conf, sd_conf),
+    names_glue = "elder_{elder}_{.value}"
+  )
+
+# Perform t-tests for each country and year
+t_test_results <- df_issp %>%
+  group_by(country_prefix, year) %>%
+  summarise(
+    t_value = ifelse(
+      sum(elder == 1) > 1 & sum(elder == 0) > 1, # Ensure there are enough observations
+      t.test(confidence[elder == 1], confidence[elder == 0])$statistic,
+      NA
+    ),
+    p_value = ifelse(
+      sum(elder == 1) > 1 & sum(elder == 0) > 1,
+      t.test(confidence[elder == 1], confidence[elder == 0])$p.value,
+      NA
+    ),
+    .groups = "drop"
+  )
+
+# Combine the summarized data with t-test results
+final_table <- summarized_data %>%
+  left_join(t_test_results, by = c("country_prefix", "year")) %>%
+  pivot_wider(
+    names_from = year,
+    values_from = c(elder_1_mean_conf, elder_1_sd_conf, elder_0_mean_conf, elder_0_sd_conf, t_value, p_value),
+    names_glue = "{year}_{.value}"
+  )
+
+# Custom country order by country code
+custom_order_codes <- c(
+  "AU", "PH", "US", "ZA", "CH", "CN", "CZ", "DE", "FR", 
+  "HR", "IL", "IT", "JP", "PL", "RU", "SK", "DK", "FI", 
+  "NL", "NO", "SI"
+)
+
+# Ensure `country_prefix` is a factor and matches the custom order
+final_table$country_prefix <- factor(
+  final_table$country_prefix,
+  levels = custom_order_codes
+)
+
+# Sort the table based on the custom order
+final_table_sorted <- final_table %>%
+  arrange(country_prefix)
+
+# Display the sorted table
+final_table_sorted
+
+
+
+
+
+```
+
+```{r}
+library(writexl)
+
+# Export the sorted table to an Excel file
+write_xlsx(final_table_sorted, "final_table_sorted.xlsx")
+```
+
+```{r}
+# 載入必要套件
+library(Hmisc)
+library(dplyr)
+library(knitr)
+library(kableExtra)
+library(ggcorrplot)
+
+# 假設資料集為 `data`，範例變數為個體層級數據
+# 選取感興趣的變數
+subset_data <- df_issp %>% dplyr::select(AGE, longstanding_illness, gdp_pcap, gdp_growth, 
+                                  z_fam_inc, z_personal_inc, physical_health, mental_health, confidence)
+
+# 計算相關係數和顯著性檢驗
+cor_results <- rcorr(as.matrix(subset_data), type = "pearson")
+
+# 提取相關矩陣和顯著性矩陣
+cor_matrix <- cor_results$r
+p_matrix <- cor_results$P
+diag(cor_matrix) <- 1
+diag(p_matrix) <- 1
+
+# 將顯著性標註星號
+significance <- function(p) {
+  if (p < 0.001) {
+    return("***")
+  } else if (p < 0.01) {
+    return("**")
+  } else if (p < 0.05) {
+    return("*")
+  } else {
+    return("")
+  }
+}
+
+
+# 創建帶有星號的相關矩陣
+formatted_matrix <- cor_matrix
+
+# 正確使用行和列的索引迭代
+for (i in seq_len(nrow(cor_matrix))) {
+  for (j in seq_len(ncol(cor_matrix))) {
+    formatted_matrix[i, j] <- paste0(
+      round(cor_matrix[i, j], 2), 
+      " ", 
+      significance(p_matrix[i, j])
+    )
+  }
+}
+
+# 生成報表
+formatted_matrix <- as.data.frame(formatted_matrix)
+colnames(formatted_matrix) <- rownames(formatted_matrix) <- colnames(subset_data)
+
+kable(formatted_matrix, align = "c", format = "html") %>%
+  kable_styling(full_width = FALSE, font_size = 12) %>%
+  add_header_above(c(" " = 1, "Correlation Matrix" = ncol(subset_data)))
+
+
+```
+
+```{r}
+# 載入必要套件
+library(Hmisc)
+library(ggplot2)
+library(reshape2)
+
+rename_lookup_corr <- data.frame(
+  original = c(
+    "elder", 
+    "longstanding_illness", 
+    "physical_health", 
+    "mental_health", 
+    "z_fam_inc", 
+    "z_personal_inc",
+    "confidence"
+  ),
+  renamed = c(
+    "Elder", 
+    "Have Longstanding Illness", 
+    "Physical Health", 
+    "Mental Health",
+    "Family Income (Z score)",
+    "Personal Income (Z score)",
+    "Perception Towards Healthcare System"
+  )
+)
+
+
+
+# 假設資料已載入，並選取感興趣的變數
+subset_data <- df_issp %>% dplyr::select(elder, z_fam_inc, z_personal_inc, longstanding_illness, physical_health, mental_health, confidence)
+
+# 計算相關性矩陣和顯著性矩陣
+cor_results <- rcorr(as.matrix(subset_data), type = "pearson")
+cor_matrix <- cor_results$r
+p_matrix <- cor_results$P
+
+# 根據 lookup 表重新命名變數
+renamed_vars_corr <- setNames(rename_lookup_corr$renamed, rename_lookup_corr$original)
+
+# 更新相關性矩陣行列名稱
+rownames(cor_matrix) <- colnames(cor_matrix) <- renamed_vars_corr[rownames(cor_matrix)]
+
+
+# 將相關係數矩陣轉為長格式
+heatmap_data <- melt(cor_matrix)
+colnames(heatmap_data) <- c("Var1", "Var2", "value")
+
+# 添加星號標註
+heatmap_data$significance <- ""
+heatmap_data$significance[p_matrix < 0.001] <- "***"
+heatmap_data$significance[p_matrix >= 0.001 & p_matrix < 0.01] <- "**"
+heatmap_data$significance[p_matrix >= 0.01 & p_matrix < 0.05] <- "*"
+
+# 合併星號與相關係數
+heatmap_data$label <- paste0(round(heatmap_data$value, 2), " ", heatmap_data$significance)
+
+# 根據 lookup 表重新命名變數
+renamed_vars_corr <- setNames(rename_lookup_corr$renamed, rename_lookup_corr$original)
+
+# 更新相關性矩陣行列名稱
+rownames(cor_matrix) <- colnames(cor_matrix) <- renamed_vars_corr[rownames(cor_matrix)]
+
+
+
+
+# 繪製熱度圖
+ggplot(heatmap_data, aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "white", size = 1.2) +  # 增加格子間距和邊框
+  scale_fill_gradient2(low = "#4575b4", mid = "white", high = "#d73027", midpoint = 0, 
+                       limit = c(-1, 1), name = "Correlation") +
+  geom_text(aes(label = label), color = "black", size = 2.5) +  
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 6, face = "bold"),  # 增大字體
+    axis.text.y = element_text(size = 6, face = "bold"),  # 增大字體
+    panel.grid = element_blank()
+  ) +
+  labs(title = "Heatmap of Pairwise Correlations",
+       x = "", y = "")
+
+```
