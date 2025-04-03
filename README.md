@@ -40,6 +40,28 @@ Key features of this research:
 
 > 🔍 *Contrary to expectations, some social-democratic countries show greater age gaps than liberal ones.*
 
+## 📉 Model Outputs
+
+### 🔹 Fixed Effects (Coefficients)
+
+<p align="center">
+  <img src="plots/coef.png" width="600"/>
+</p>
+
+<p align="center"><em>Coefficient estimates from the full model. After controlling for health, income, and GDP factors, older adults (≥70) show significantly lower evaluations of the healthcare system.</em></p>
+
+---
+
+### 🔹 Random Slopes for Age Group
+
+<p align="center">
+  <img src="plots/rs.png" width="600"/>
+</p>
+
+<p align="center"><em>Random slopes by country: the age gap in healthcare system evaluations varies widely across nations, with no clear pattern by welfare regime.</em></p>
+
+
+
 
 ## 📎 Notes
 
